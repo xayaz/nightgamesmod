@@ -3,6 +3,7 @@ package nightgames.characters;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -76,15 +77,24 @@ public abstract class Character extends Observable implements Cloneable {
     public Outfit outfit;
     public List<Clothing> outfitPlan;
     protected Area location;
-    protected HashSet<Skill> skills;
+    /**
+     * Unmodifiable.
+     */
+    protected Set<Skill> skills;
     public HashSet<Status> status;
-    public Set<Trait> traits;
+    /** 
+     * Unmodifiable.
+     */
+    protected Set<Trait> traits;
     protected HashMap<Trait, Integer> temporaryAddedTraits;
     protected HashMap<Trait, Integer> temporaryRemovedTraits;
     public HashSet<Status> removelist;
     public HashSet<Status> addlist;
     public HashMap<String, Integer> cooldowns;
-    private HashSet<Character> mercy;
+    /**
+     * Unmodifiable.
+     */
+    private Set<Character> mercy;
     protected Map<Item, Integer> inventory;
     private HashMap<String, Integer> flags;
     protected Item trophy;
@@ -130,14 +140,14 @@ public abstract class Character extends Observable implements Cloneable {
         outfitPlan = new ArrayList<Clothing>();
 
         closet = new HashSet<Clothing>();
-        skills = new HashSet<Skill>();
+        skills = Collections.emptySet(); // unmodifiable
         status = new HashSet<Status>();
-        traits = new TreeSet<Trait>((a, b) -> a.toString().compareTo(b.toString()));
-        temporaryAddedTraits = new HashMap<Trait, Integer>();
-        temporaryRemovedTraits = new HashMap<Trait, Integer>();
-        removelist = new HashSet<Status>();
-        addlist = new HashSet<Status>();
-        mercy = new HashSet<Character>();
+        traits = Collections.unmodifiableSet(new TreeSet<Trait>((a, b) -> a.toString().compareTo(b.toString())));
+        temporaryAddedTraits = new HashMap<Trait, Integer>(2);
+        temporaryRemovedTraits = new HashMap<Trait, Integer>(2);
+        removelist = new HashSet<Status>(2);
+        addlist = new HashSet<Status>(2);
+        mercy = Collections.emptySet(); // unmodifiable
         inventory = new HashMap<Item, Integer>();
         attractions = new HashMap<Character, Integer>();
         affections = new HashMap<Character, Integer>();
@@ -150,6 +160,14 @@ public abstract class Character extends Observable implements Cloneable {
         Global.learnSkills(this);
     }
 
+    /* clone() is hit especially hard by the fight simulation.
+     * 
+     * This implementation makes a sort-of deep copy. Some fields 
+     * are never mutated in-place, and are therefore shallow copied.
+     * 
+     * finishClone() must be called afterwards to clean up.
+     * See Combat.clone().
+     */
     @Override
     @SuppressWarnings({"unchecked"})
     public Character clone() throws CloneNotSupportedException {
@@ -162,22 +180,18 @@ public abstract class Character extends Observable implements Cloneable {
         c.willpower = willpower.clone();
         c.outfitPlan = new ArrayList<Clothing>(outfitPlan);
         c.outfit = new Outfit(outfit);
-        c.status = new HashSet<Status>();
         c.flags = new HashMap<>(flags);
-        for (Status s : status) {
-            Status clone = s.instance(c, c);
-            c.status.add(clone);
-        }
-        c.traits = new TreeSet<Trait>(traits);
-        c.temporaryAddedTraits = new HashMap<Trait, Integer>(temporaryAddedTraits);
-        c.temporaryRemovedTraits = new HashMap<Trait, Integer>(temporaryRemovedTraits);
+        c.status = status; // Deep copy will be made in finishClone.
+        c.traits = traits; // unmodifiable
+        c.temporaryAddedTraits = (HashMap<Trait, Integer>) temporaryAddedTraits.clone();
+        c.temporaryRemovedTraits = (HashMap<Trait, Integer>) temporaryRemovedTraits.clone();
         c.removelist = (HashSet<Status>) removelist.clone();
         c.addlist = (HashSet<Status>) addlist.clone();
-        c.mercy = (HashSet<Character>) mercy.clone();
+        c.mercy = mercy; // unmodifiable
         c.inventory = (Map<Item, Integer>) ((HashMap<Item, Integer>) inventory).clone();
         c.attractions = (HashMap<Character, Integer>) attractions.clone();
         c.affections = (HashMap<Character, Integer>) affections.clone();
-        c.skills = (HashSet<Skill>) skills.clone();
+        c.skills = skills; // unmodifiable
         c.body = body.clone();
         c.body.character = c;
         c.orgasmed = orgasmed;
@@ -873,11 +887,15 @@ public abstract class Character extends Observable implements Cloneable {
     }
 
     public Collection<Trait> getTraits() {
-        Collection<Trait> allTraits = new HashSet<Trait>();
-        allTraits.addAll(traits);
+        Collection<Trait> allTraits = new HashSet<Trait>(traits);
         allTraits.addAll(temporaryAddedTraits.keySet());
         allTraits.removeAll(temporaryRemovedTraits.keySet());
         return allTraits;
+    }
+
+    public void setTraits(Collection<Trait> traits) {
+        Set<Trait> newTraits = new TreeSet<Trait>(traits);
+        this.traits = Collections.unmodifiableSet(newTraits);
     }
 
     public boolean addTemporaryTrait(Trait t, int duration) {
@@ -903,11 +921,15 @@ public abstract class Character extends Observable implements Cloneable {
     }
 
     public void add(Trait t) {
-        traits.add(t);
+        HashSet<Trait> newTraits = new HashSet<Trait>(traits);
+        newTraits.add(t);
+        traits = Collections.unmodifiableSet(newTraits);
     }
 
     public void remove(Trait t) {
-        traits.remove(t);
+        HashSet<Trait> newTraits = new HashSet<Trait>(traits);
+        newTraits.remove(t);
+        traits = Collections.unmodifiableSet(newTraits);
     }
 
     public boolean hasPure(Trait t) {
@@ -1390,7 +1412,7 @@ public abstract class Character extends Observable implements Cloneable {
         // End Clothing loading
 
         loadClothingFromArr(obj, closet, "closet");
-        traits = new HashSet<>(JSONUtils.loadEnumsFromArr(obj, "traits", Trait.class));
+        traits = Collections.unmodifiableSet(new HashSet<>(JSONUtils.loadEnumsFromArr(obj, "traits", Trait.class)));
         body = Body.load((JSONObject) obj.get("body"), this);
         {
             JSONObject attObj = (JSONObject) obj.get("attributes");
@@ -1774,11 +1796,15 @@ public abstract class Character extends Observable implements Cloneable {
     public abstract void emote(Emotion emo, int amt);
 
     public void learn(Skill copy) {
-        skills.add(copy.copy(this));
+        HashSet<Skill> newSkills = new HashSet<Skill>(skills);
+        newSkills.add(copy.copy(this));
+        skills = Collections.unmodifiableSet(newSkills);
     }
 
     public void forget(Skill copy) {
-        skills.remove(copy);
+        HashSet<Skill> newSkills = new HashSet<Skill>(skills);
+        newSkills.remove(copy);
+        skills = Collections.unmodifiableSet(newSkills);
     }
 
     public boolean stealthCheck(int perception) {
@@ -1925,14 +1951,16 @@ public abstract class Character extends Observable implements Cloneable {
     }
 
     public void defeated(Character victor) {
-        mercy.add(victor);
+        HashSet<Character> newMercy = new HashSet<Character>(mercy);
+        newMercy.add(victor);
+        mercy = Collections.unmodifiableSet(newMercy);
     }
 
     public void resupply() {
         for (Character victor : mercy) {
             victor.bounty(has(Trait.event) ? 5 : 1, victor);
         }
-        mercy.clear();
+        mercy = Collections.emptySet();
         change();
         state = State.ready;
         getWillpower().fill();
@@ -1975,7 +2003,7 @@ public abstract class Character extends Observable implements Cloneable {
             victor.bounty(has(Trait.event) ? 5 : 1, victor);
         }
         Global.gui().clearImage();
-        mercy.clear();
+        mercy = Collections.emptySet();
         change();
         clearStatus();
         temporaryAddedTraits.clear();

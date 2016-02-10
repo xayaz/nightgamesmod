@@ -34,7 +34,7 @@ public class CustomNPC extends BasePersonality {
         character.closet.addAll(character.outfitPlan);
         character.change();
         character.att = new HashMap<Attribute, Integer>(data.getStats().attributes);
-        character.traits = new HashSet<Trait>(data.getStats().traits);
+        character.setTraits(data.getStats().traits);
         character.getArousal().setMax(data.getStats().arousal);
         character.getStamina().setMax(data.getStats().stamina);
         character.getMojo().setMax(data.getStats().mojo);
